@@ -8,7 +8,7 @@ pub const std_options: std.Options = .{ .log_level = .warn };
 
 const Context = struct {
     allocator: std.mem.Allocator,
-    //url: []const u8 = "WECOM_URL",
+    url: []const u8 = "WX_URL",
     content: []const u8,
 };
 
@@ -78,19 +78,65 @@ fn main_frame(rt: *Runtime, context: *Context) !void {
         try future.setCancelled();
     };
 
-    const result = future.result(rt) catch |err| {
-        std.debug.print("Fetch error: {}\n", .{err});
-        return;
+    handle_network_result(rt, &future) catch |err| {
+        if (isNetworkError(err)) {
+            std.debug.print("网络异常: {}\n", .{err});
+            return;
+        }
+        return err;
     };
-
-    if (result.status.class() == .success) {
-        //std.debug.print("Fetch status: {} - {?s}\n", .{ @intFromEnum(result.status), result.status.phrase() });
-        //std.debug.print("Retry count: {}\n", .{result.retry_count});
-        if (result.retry_status) |retry_status| std.debug.print("Retry status: {} {?s}\n", .{ @intFromEnum(retry_status), retry_status.phrase() });
-        if (result.retry_error) |retry_err| std.debug.print("Retry error: {}\n", .{retry_err});
-        //std.debug.print("Body:\n\n{s}\n\n", .{resp.items});
-    } else {
-        std.debug.print("Fetch Failed with status: {} - {?s}\n", .{ @intFromEnum(result.status), result.status.phrase() });
-    } 
 }
 
+fn handle_network_result( rt: *Runtime, future: *Client.FutureFetchResult, ) !void {
+    const result = future.result(rt) catch |err| {
+        switch (err) {
+            error.ConnectionRefused,
+            error.ConnectionTimedOut,
+            error.ConnectionResetByPeer,
+            error.NetworkUnreachable,
+            error.HostUnreachable,
+            error.ProtocolFailure,
+            error.TemporaryNameServerFailure,
+            error.NameServerFailure,
+            error.NetworkDown => {
+                std.debug.print("网络异常: {}\n", .{err});
+                return err;
+            },
+            else => {
+                std.debug.print("请求失败: {}\n", .{err});
+                return err;
+            },
+        }
+    };
+
+    if (result.status.class() != .success) {
+        // 处理HTTP错误状态
+        const status_code = @intFromEnum(result.status);
+        std.debug.print("HTTP错误 ({}) - {?s}\n", .{ 
+            status_code, 
+            result.status.phrase() 
+        });
+        
+        if (status_code >= 500) {
+            std.debug.print("服务器错误\n", .{});
+        } else if (status_code >= 400) {
+            std.debug.print("客户端错误\n", .{});
+        }
+        
+    }
+}
+
+fn isNetworkError(err: anyerror) bool {
+    return switch (err) {
+        error.ConnectionRefused,
+        error.ConnectionTimedOut,
+        error.ConnectionResetByPeer,
+        error.NetworkUnreachable,
+        error.HostUnreachable,
+        error.ProtocolFailure,
+        error.TemporaryNameServerFailure,
+        error.NameServerFailure,
+        error.NetworkDown => true,
+        else => false,
+    };
+}

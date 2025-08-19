@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
     }).module("tardy_http_client");
 
     const exe = b.addExecutable(.{
-        .name = "wx_mac",
+        .name = "wx_osx",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
